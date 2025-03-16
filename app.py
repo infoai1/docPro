@@ -15,14 +15,17 @@ api_key = st.text_input("Enter your OpenAI API Key:", type="password")
 docx_file = st.file_uploader("Upload a DOCX file", type=["docx"])
 
 # OpenAI API Call Function
+import openai
+
 def call_openai_api(api_key, messages):
-    openai.api_key = api_key  # Set API Key dynamically
-    response = openai.ChatCompletion.create(
+    client = openai.OpenAI(api_key=api_key)  # Create OpenAI client
+
+    response = client.chat.completions.create(  # Updated API call
         model="gpt-4",
         messages=messages,
         temperature=0.5
     )
-    return response["choices"][0]["message"]["content"]
+    return response.choices[0].message.content  # Updated response format
 
 # Extract text from DOCX
 def extract_text_from_docx(docx_file):
