@@ -1,3 +1,59 @@
+import streamlit as st
+import openai
+import pandas as pd
+import json
+import io
+from docx import Document
+
+# Streamlit UI
+st.title("Google Doc Thematic Analysis with GPT-4")
+
+# API Key Input
+api_key = st.text_input("Enter your OpenAI API Key:", type="password")
+
+# File Upload
+docx_file = st.file_uploader("Upload a DOCX file", type=["docx"])
+
+# OpenAI API Call Function
+def call_openai_api(api_key, messages):
+    client = openai.OpenAI(api_key=api_key)  # Create OpenAI client
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            temperature=0.5
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"❌ OpenAI API Error: {e}")
+        return None
+
+# Extract text from DOCX
+def extract_text_from_docx(docx_file):
+    document = Document(docx_file)
+    text = "\n".join([para.text for para in document.paragraphs if para.text.strip()])
+    return text
+
+# Detect Chapters (Basic Heading Detection)
+def split_into_chapters(text):
+    lines = text.split("\n")
+    chapters = []
+    current_chapter = {"title": "Introduction", "text": ""}
+    
+    for line in lines:
+        if len(line.strip()) > 0 and line.strip().isupper():
+            if current_chapter["text"].strip():
+                chapters.append(current_chapter)
+            current_chapter = {"title": line.strip(), "text": ""}
+        else:
+            current_chapter["text"] += line + " "
+    
+    if current_chapter["text"].strip():
+        chapters.append(current_chapter)
+    
+    return chapters
+
+# Process Chapters with OpenAI API
 # Process Chapters with OpenAI API
 def process_chapters(api_key, chapters):
     results = []
@@ -93,3 +149,39 @@ def process_chapters(api_key, chapters):
                 st.error(f"❌ Error processing chapter: {chapter['title']} - AI returned invalid JSON.")
     
     return results
+
+# Convert Processed Data to CSV
+def convert_to_csv(data):
+    df = pd.DataFrame(data)
+    
+    # Debug: Show first few rows in Streamlit before downloading
+    if not df.empty:
+        st.write("✅ Processed Data Preview:")
+        st.dataframe(df.head(10))
+    else:
+        st.error("❌ No data generated. Please check AI responses.")
+    
+    return df
+
+# Main Processing Logic
+if docx_file:
+    with st.spinner("Extracting text..."):
+        text = extract_text_from_docx(docx_file)
+        chapters = split_into_chapters(text)
+        st.success(f"✅ Extracted {len(chapters)} chapters.")
+    
+    if api_key and st.button("Process with GPT-4"):
+        with st.spinner("Processing chapters..."):
+            results = process_chapters(api_key, chapters)
+            df = convert_to_csv(results)
+            
+            if not df.empty:
+                # Download CSV File
+                csv_buffer = io.BytesIO()
+                df.to_csv(csv_buffer, index=False)
+                csv_buffer.seek(0)
+                st.download_button("📥 Download CSV", csv_buffer, file_name="processed_chapters.csv", mime="text/csv")
+            else:
+                st.error("❌ No data available to download.")
+    elif not api_key:
+        st.warning("⚠️ Please enter your OpenAI API Key before proceeding.")
