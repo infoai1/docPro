@@ -15,12 +15,9 @@ api_key = st.text_input("Enter your OpenAI API Key:", type="password")
 docx_file = st.file_uploader("Upload a DOCX file", type=["docx"])
 
 # OpenAI API Call Function
-import openai
-
 def call_openai_api(api_key, messages):
     client = openai.OpenAI(api_key=api_key)  # Create OpenAI client
-
-    response = client.chat.completions.create(  # Updated API call
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=messages,
         temperature=0.5
@@ -53,20 +50,36 @@ def split_into_chapters(text):
     return chapters
 
 # Process Chapters with OpenAI API
-def process_chapters(api_key, chapters):
+def process_chapters(api_key, chapters, file_name):
     results = []
     for chapter in chapters:
         messages = [
-            {"role": "system", "content": "You are an expert in thematic analysis."},
-            {"role": "user", "content": f"Analyze this chapter and provide structured JSON output:\nTitle: {chapter['title']}\nText: {chapter['text']}"}]
+            {"role": "system", "content": "You are an expert in thematic analysis and text chunking."},
+            {"role": "user", "content": f"Given the chapter title and its text, split the text into coherent thematic chunks of around **200-300 tokens each**.\n\nFor each chunk, generate:\n- **Chapter**: The section title (if available, otherwise use the chapter title).\n- **Text**: The thematic text chunk.\n- **Contextual Question**: A comprehensive, question-style title that includes **themes, keywords, and references** to clarify the context.\n- **Summary**: A concise **2-3 sentence summary** of the chunk.\n- **Context**: A brief **2-3 sentence explanation** of the chunk’s background.\n- **Outline**: A structured **series of probing questions** based on **references (Quran, Hadith, historical figures, places, themes).**\n- **Theme**: Thematic focus of the chunk.\n- **Keywords**: The most **important keywords** in the chunk.\n- **References**: List of **Quranic verses, Hadith, historical events, names, dates, quotes, etc.** found in the chunk.\n\nAdditionally, generate:\n- A **contextual question** that captures the **core idea** of the chapter.\n- A **summary (2-3 sentences)**\n- A **context (2-3 sentences)**\n- An **outline as a series of questions** based on **references (Quran, Hadith, historical events, figures, places, themes).**\n- The **theme** of the chapter.\n- Important **keywords**.\n\nTitle: {chapter['title']}\nText: {chapter['text']}"}
+        ]
         
         response = call_openai_api(api_key, messages)
         
         try:
             response_json = json.loads(response)
-            response_json["Chapter"] = chapter['title']
-            response_json["Text"] = chapter['text']
-            results.append(response_json)
+            for chunk in response_json.get("chunks", []):
+                results.append({
+                    "Chapter Name": chapter['title'],
+                    "Text Chunk": chunk.get("text", ""),
+                    "Contextual Question (Chapter)": response_json.get("contextual_question", ""),
+                    "Contextual Question (Chunk)": chunk.get("contextual_question", ""),
+                    "Chapter Summary": response_json.get("summary", ""),
+                    "Chapter Context": response_json.get("context", ""),
+                    "Chapter Outline (Series of Questions)": response_json.get("outline", ""),
+                    "Chapter Theme": response_json.get("theme", ""),
+                    "Chapter Keywords": ", ".join(response_json.get("keywords", [])),
+                    "Chunk Summary": chunk.get("summary", ""),
+                    "Chunk Context": chunk.get("context", ""),
+                    "Chunk Outline (Series of Questions)": chunk.get("outline", ""),
+                    "Chunk Theme": chunk.get("theme", ""),
+                    "Chunk Keywords": ", ".join(chunk.get("keywords", [])),
+                    "References": ", ".join(chunk.get("references", []))
+                })
         except json.JSONDecodeError:
             st.error(f"Error processing chapter: {chapter['title']}")
     
@@ -86,7 +99,8 @@ if docx_file:
     
     if api_key and st.button("Process with GPT-4"):
         with st.spinner("Processing chapters..."):
-            results = process_chapters(api_key, chapters)
+            file_name = docx_file.name.replace(".docx", "")
+            results = process_chapters(api_key, chapters, file_name)
             df = convert_to_csv(results)
             st.success("Processing complete!")
             
